@@ -25,13 +25,13 @@ import (
 	sync "sync"
 	time "time"
 
+	versioned "github.com/GoogleCloudPlatform/spark-on-k8s-operator/pkg/client/clientset/versioned"
+	internalinterfaces "github.com/GoogleCloudPlatform/spark-on-k8s-operator/pkg/client/informers/externalversions/internalinterfaces"
+	sparkoperatork8sio "github.com/GoogleCloudPlatform/spark-on-k8s-operator/pkg/client/informers/externalversions/sparkoperator.k8s.io"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	cache "k8s.io/client-go/tools/cache"
-	versioned "k8s.io/spark-on-k8s-operator/pkg/client/clientset/versioned"
-	internalinterfaces "k8s.io/spark-on-k8s-operator/pkg/client/informers/externalversions/internalinterfaces"
-	sparkoperator_k8s_io "k8s.io/spark-on-k8s-operator/pkg/client/informers/externalversions/sparkoperator.k8s.io"
 )
 
 // SharedInformerOption defines the functional option type for SharedInformerFactory.
@@ -174,9 +174,9 @@ type SharedInformerFactory interface {
 	ForResource(resource schema.GroupVersionResource) (GenericInformer, error)
 	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
 
-	Sparkoperator() sparkoperator_k8s_io.Interface
+	Sparkoperator() sparkoperatork8sio.Interface
 }
 
-func (f *sharedInformerFactory) Sparkoperator() sparkoperator_k8s_io.Interface {
-	return sparkoperator_k8s_io.New(f, f.namespace, f.tweakListOptions)
+func (f *sharedInformerFactory) Sparkoperator() sparkoperatork8sio.Interface {
+	return sparkoperatork8sio.New(f, f.namespace, f.tweakListOptions)
 }

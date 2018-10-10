@@ -23,8 +23,8 @@ import (
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 
-	"k8s.io/spark-on-k8s-operator/pkg/apis/sparkoperator.k8s.io/v1alpha1"
-	crdclientset "k8s.io/spark-on-k8s-operator/pkg/client/clientset/versioned"
+	"github.com/GoogleCloudPlatform/spark-on-k8s-operator/pkg/apis/sparkoperator.k8s.io/v1alpha1"
+	crdclientset "github.com/GoogleCloudPlatform/spark-on-k8s-operator/pkg/client/clientset/versioned"
 )
 
 var statusCmd = &cobra.Command{
@@ -63,7 +63,7 @@ func doStatus(name string, crdClientset crdclientset.Interface) error {
 func printStatus(app *v1alpha1.SparkApplication) {
 	fmt.Println("application state:")
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"State", "Submitted age", "Completed age", "Driver Pod", "Driver UI", "Retries"})
+	table.SetHeader([]string{"State", "Submission Age", "Completion Age", "Driver Pod", "Driver UI", "Retries"})
 	table.Append([]string{
 		string(app.Status.AppState.State),
 		getSinceTime(app.Status.SubmissionTime),

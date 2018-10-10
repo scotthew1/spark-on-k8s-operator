@@ -1,7 +1,7 @@
 # Quick Start Guide
 
 For a more detailed guide on how to use, compose, and work with `SparkApplication`s, please refer to the
-[User Guide](user-guide.md). If you are running the Spark Operator on Google Kubernetes Engine and want to use Google Cloud Storage (GCS) and/or BigQuery for reading/writing data, also refer to the [GCP guide](gcp.md).
+[User Guide](user-guide.md). If you are running the Kubernetes Operator for Apache Spark on Google Kubernetes Engine and want to use Google Cloud Storage (GCS) and/or BigQuery for reading/writing data, also refer to the [GCP guide](gcp.md). The Kubernetes Operator for Apache Spark will simply be referred to as the operator for the rest of this guide.
 
 ## Table of Contents
 1. [Installation](#installation)
@@ -13,48 +13,39 @@ For a more detailed guide on how to use, compose, and work with `SparkApplicatio
 
 ## Installation
 
-Before installing the Spark Operator, run the following command to setup the environment for the operator:
+To install the operator, use the Helm [chart](https://github.com/helm/charts/tree/master/incubator/sparkoperator). 
 
 ```bash
-$ kubectl apply -f manifest/spark-operator-rbac.yaml
-$ kubectl apply -f manifest/spark-rbac.yaml
+$ helm repo add incubator http://storage.googleapis.com/kubernetes-charts-incubator
+$ helm install incubator/sparkoperator
 ```
 
-This will create a namespace `sparkoperator`, setup RBAC for the Spark Operator to run in the namespace. It will also
-setup RBAC for driver pods of your Spark applications to be able to manipulate executor pods. 
-
-The Spark Operator optionally uses a [Mutating Admission Webhook](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/)
-for Spark pod customization. To install the Spark Operator **without** the mutating admission webhook on a Kubernetes cluster, run the following command:
+Installing the chart will create a namespace `spark-operator`, set up RBAC for the operator to run in the namespace. It will also set up RBAC for driver pods of your Spark applications to be able to manipulate executor pods. In addition, the chart will create a Deployment named `sparkoperator` in namespace `spark-operator`. The chart by default enables a [Mutating Admission Webhook](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/) for Spark pod customization. A webhook service called `spark-webhook` and a secret storing the x509 certificate called `spark-webhook-certs` are created for that purpose. To install the operator **without** the mutating admission webhook on a Kubernetes cluster, install the chart with the flag `enableWebhook=false`:
 
 ```bash
-$ kubectl apply -f manifest/spark-operator.yaml
+$ helm install incubator/sparkoperator --set enableWebhook=false
 ```
 
-This will create a Deployment named `sparkoperator` in namespace `sparkoperator`.
-
-Alternatively, follow [Using the Mutating Admission Webhook](#using-the-mutating-admission-webhook) for instructions on
-how to install the operator with the mutating admission webhook.
-
-Due to a [known issue](https://cloud.google.com/kubernetes-engine/docs/how-to/role-based-access-control#defining_permissions_in_a_role)
-in GKE, you will need to first grant yourself cluster-admin privileges before you can create custom roles and role
-bindings on a GKE cluster versioned 1.6 and up.
+Due to a [known issue](https://cloud.google.com/kubernetes-engine/docs/how-to/role-based-access-control#defining_permissions_in_a_role) in GKE, you will need to first grant yourself cluster-admin privileges before you can create custom roles and role bindings on a GKE cluster versioned 1.6 and up. Run the following command before installing the chart on GKE:
 
 ```bash
 $ kubectl create clusterrolebinding <user>-cluster-admin-binding --clusterrole=cluster-admin --user=<user>@<domain>
 ```
 
-Now you should see the Spark Operator running in the cluster by checking the status of the Deployment.
+Now you should see the operator running in the cluster by checking the status of the Deployment.
 
 ```bash
-$ kubectl describe deployment sparkoperator -n sparkoperator
-
+$ kubectl describe deployment sparkoperator -n spark-operator
 ```
 
 ### Metrics
 
-The operator exposes a set of metrics via the metric endpoint to be scraped by `Prometheus`.  If you would like to expose metrics, please install the operator via `kubectl apply -f manifest/spark-operator-with-metrics.yaml`.
-This installs the operator with additional flag to enable metrics (`-enable-metrics=true`) as well as other annotations used by Prometheus to scrape the metric endpoint.
-  
+The operator exposes a set of metrics via the metric endpoint to be scraped by `Prometheus`. The Helm chart by default installs the operator with the additional flag to enable metrics (`-enable-metrics=true`) as well as other annotations used by Prometheus to scrape the metric endpoint. To install the operator  **without** metrics enabled, pass the appropriate flag during `helm install`:
+
+```bash
+$ helm install incubator/sparkoperator --set enableMetrics=false
+```
+
 If enabled, the operator generates the following metrics:
 
 | Metric | Description |
@@ -79,50 +70,37 @@ The following is a list of all the configurations the operators supports for met
 -metrics-label=label1Key
 -metrics-label=label2Key
 ```
-All configs except `-enable-metrics` are optional. If port and/or endpoint are specified, please ensure that the annotations `prometheus.io/port`,
- `prometheus.io/path` and `containerPort` in `spark-operator-with-metrics.yaml` are updated as well.
+All configs except `-enable-metrics` are optional. If port and/or endpoint are specified, please ensure that the annotations `prometheus.io/port`,  `prometheus.io/path` and `containerPort` in `spark-operator-with-metrics.yaml` are updated as well.
 
-A note about `metrics-labels`: In `Prometheus`, every unique combination of key-value label pair represents a new time series,
-which can dramatically increase the amount of data stored.  Hence labels should not be used to store dimensions with high
-cardinality with potentially a large or unbounded value range.
+A note about `metrics-labels`: In `Prometheus`, every unique combination of key-value label pair represents a new time series, which can dramatically increase the amount of data stored.  Hence labels should not be used to store dimensions with high cardinality with potentially a large or unbounded value range.
 
-Additionally, these metrics are best-effort for the current operator run and will be reset on an operator restart.
-Also some of these metrics are generated by listening to pod state updates for the driver/executors
+Additionally, these metrics are best-effort for the current operator run and will be reset on an operator restart. Also some of these metrics are generated by listening to pod state updates for the driver/executors
 and deleting the pods outside the operator might lead to incorrect metric values for some of these metrics.
 
 ## Configuration
 
-Spark Operator is typically deployed and run using `manifest/spark-operator.yaml` through a Kubernetes `Deployment`.
-However, users can still run it outside a Kubernetes cluster and make it talk to the Kubernetes API server of a cluster
-by specifying path to `kubeconfig`, which can be done using the `-kubeconfig` flag.
+The operator is typically deployed and run using the Helm chart. However, users can still run it outside a Kubernetes cluster and make it talk to the Kubernetes API server of a cluster by specifying path to `kubeconfig`, which can be done using the `-kubeconfig` flag.
 
-Spark Operator uses multiple workers in the `SparkApplication` controller and and the submission runner.
-The number of worker threads to use in the three places are controlled using command-line flags `-controller-threads` 
-and `-submission-threads`, respectively. The default values for the flags are 10 and 3, respectively.
+The operator uses multiple workers in the `SparkApplication` controller and and the submission runner.
+The number of worker threads to use in the three places are controlled using command-line flags `-controller-threads` and `-submission-threads`, respectively. The default values for the flags are 10 and 3, respectively.
 
-Spark Operator enables cache resynchronization so periodically the informers used by the operator will re-list existing
-objects it manages and re-trigger resource events. The resynchronization interval in seconds can be configured using the
-flag `-resync-interval`, with a default value of 30 seconds.
+The operator enables cache resynchronization so periodically the informers used by the operator will re-list existing objects it manages and re-trigger resource events. The resynchronization interval in seconds can be configured using the flag `-resync-interval`, with a default value of 30 seconds.
 
-By default, Spark Operator will install the
-[CustomResourceDefinitions](https://kubernetes.io/docs/tasks/access-kubernetes-api/extend-api-custom-resource-definitions/)
-for the custom resources it managers. This can be disabled by setting the flag `-install-crds=false.`.
+By default, the operator will install the [CustomResourceDefinitions](https://kubernetes.io/docs/tasks/access-kubernetes-api/extend-api-custom-resource-definitions/) for the custom resources it managers. This can be disabled by setting the flag `-install-crds=false.`.
 
-The mutating admission webhook is an **optional** component and can be enabled or disabled using the `-enable-webhook` flag, 
-which defaults to `false`.
+The mutating admission webhook is an **optional** component and can be enabled or disabled using the `-enable-webhook` flag, which defaults to `false`.
 
-By default, Spark Operator will manage custom resource objects of the managed CRD types for the whole cluster.
-It can be configured to manage only the custom resource objects in a specific namespace with the flag `-namespace=<namespace>`
+By default, the operator will manage custom resource objects of the managed CRD types for the whole cluster. It can be configured to manage only the custom resource objects in a specific namespace with the flag `-namespace=<namespace>`
 
 ## Upgrade
 
-To upgrade the Spark Operator, e.g., to use a newer version container image with a new tag, run the following command
-with the updated YAML file for the Deployment of the Spark Operator:
+To upgrade the the operator, e.g., to use a newer version container image with a new tag, run the following command with updated parameters for the Helm release: 
 
 ```bash
-$ kubectl apply -f manifest/spark-operator.yaml
-
+$ helm upgrade <YOUR-HELM-RELEASE-NAME> --set operatorImageName=org/image --set operatorVersion=newTag
 ```
+
+Refer to the Helm [documentation](https://docs.helm.sh/helm/#helm-upgrade) for more details on `helm upgrade`.
 
 ## Running the Examples
 
@@ -185,7 +163,6 @@ To check events for the `SparkApplication` object, run the following command:
 
 ```bash
 $ kubectl describe sparkapplication spark-pi
-
 ```
 
 This will show the events similarly to the following:
@@ -198,95 +175,21 @@ Events:
   Normal  SparkApplicationTerminated  4m    spark-operator  SparkApplication spark-pi terminated with state: COMPLETED
 ```
 
-The Spark Operator submits the Spark Pi example to run once it receives an event indicating the `SparkApplication`
-object was added.
+The operator submits the Spark Pi example to run once it receives an event indicating the `SparkApplication` object was added.
 
 ## Using the Mutating Admission Webhook
 
-The Spark Operator comes with an optional mutating admission webhook for customizing Spark driver and executor pods based 
-on the specification in `SparkApplication` objects, e.g., mounting user-specified ConfigMaps and volumes, and setting
-pod affinity/anti-affinity.
+The Kubernetes Operator for "Apache Spark comes with an optional mutating admission webhook for customizing Spark driver and executor pods based on the specification in `SparkApplication` objects, e.g., mounting user-specified ConfigMaps and volumes, and setting pod affinity/anti-affinity.
 
-The webhook requires a X509 certificate for TLS for pod admission requests and responses between the Kubernetes API 
-server and the webhook server running inside the operator. For that, the certificate and key files must be accessible
-by the webhook server and a Kubernetes secret can be used to store the files.
+The webhook requires a X509 certificate for TLS for pod admission requests and responses between the Kubernetes API server and the webhook server running inside the operator. For that, the certificate and key files must be accessible by the webhook server.
+The Spark Operator ships with a tool at `hack/gencerts.sh` for generating the CA and server certificate and putting the certificate and key files into a secret named `spark-webhook-certs` in namespace `sparkoperator`. This secret will be mounted into the Spark Operator pod.  
 
-The Spark Operator ships with a tool at `hack/gencerts.sh` for generating the CA and server certificate and putting the 
-certificate and key files into a secret. Running `hack/gencerts.sh` will generate a CA certificate and a certificate
-for the webhook server signed by the CA, and create a secret named `spark-webhook-certs` in namespace `sparkoperator`. 
-This secret will be mounted into the Spark Operator pod.  
-
-With the secret storing the certificate and key files available, run the following command to install the Spark Operator
-with the mutating admission webhook:
+Run the following command to create secret with certificate and key files using Batch Job, and install the Spark Operator Deployment with the mutating admission webhook:
 
 ```bash
 $ kubectl apply -f manifest/spark-operator-with-webhook.yaml
 ```
 
-This will create a Deployment named `sparkoperator` and a Service named `spark-webhook` for the webhook in namespace 
-`sparkoperator`.
+This will create a Deployment named `sparkoperator` and a Service named `spark-webhook` for the webhook in namespace `sparkoperator`.
 
-## Build
-
-In case you want to build the Spark Operator from the source code, e.g., to test a fix or a feature you write, you can do so following the instructions below.
-
-The easiest way to build without worrying about dependencies is to just build the Dockerfile.
-
-```bash
-$ docker build -t <image-tag> .
-```
-
-If you'd like to build/test the spark-operator locally, follow the instructions below:
-
-```bash
-$ mkdir -p $GOPATH/src/k8s.io
-$ cd $GOPATH/src/k8s.io
-$ git clone git@github.com:GoogleCloudPlatform/spark-on-k8s-operator.git
-```
-
-The Spark Operator uses [dep](https://golang.github.io/dep/) for dependency management. Please install `dep` following
-the instruction on the website if you don't have it available locally. To install the dependencies, run the following
-command:
-
-```bash
-$ dep ensure
-```
-
-To update the dependencies, run the following command. (You can skip this unless you know there's a dependency that needs updating):
-
-```bash
-$ dep ensure -update
-```
-
-Before building the Spark Operator the first time, run the following commands to get the required Kubernetes code
-generators:
-
-```bash
-$ go get -u k8s.io/code-generator/cmd/client-gen
-$ go get -u k8s.io/code-generator/cmd/deepcopy-gen
-$ go get -u k8s.io/code-generator/cmd/defaulter-gen
-```
-
-To update the auto-generated code, run the following command. (This step is only required if the CRD types have been changed):
-
-```bash
-$ go generate
-```
-
-You can verify the current auto-generated code is up to date with:
-
-```bash
-$ hack/verify-codegen.sh
-```
-
-To build the Spark Operator, run the following command:
-
-```bash
-$ GOOS=linux go build -o spark-operator
-```
-
-To run unit tests, run the following command:
-
-```bash
-$ go test ./...
-```
+If the operator is installed via the Helm chart using the default settings (i.e. with webhook enabled), the above steps are all automated for you.
